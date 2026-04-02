@@ -27,7 +27,7 @@ def _ollama_model() -> str:
 def _chat(messages: list[dict]) -> str:
     """Call Ollama; exposed for unit tests via unittest.mock.patch."""
     client = Client(host=_ollama_host())
-    response = client.chat(model=_ollama_model(), messages=messages)
+    response = client.chat(model=_ollama_model(), messages=messages, think=False, keep_alive=-1)
     content = getattr(response.message, "content", None) if response.message else None
     return (content or "").strip()
 
