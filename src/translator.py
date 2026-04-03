@@ -14,6 +14,28 @@ from typing import Optional
 
 from ollama import Client
 
+# Substrings matched by _normalize_language_response; also listed (Title Case) in the language prompt.
+_KNOWN_LANGUAGE_TOKENS: tuple[str, ...] = (
+    "english",
+    "german",
+    "french",
+    "spanish",
+    "chinese",
+    "japanese",
+    "korean",
+    "italian",
+    "portuguese",
+    "russian",
+    "arabic",
+    "hindi",
+    "vietnamese",
+    "thai",
+    "turkish",
+    "catalan",
+)
+
+_PROMPT_LANGUAGE_ENUM = ", ".join(t.title() for t in _KNOWN_LANGUAGE_TOKENS)
+
 
 def _ollama_host() -> str:
     # ollama-python accepts host:port or full http URL; Docker Compose sets http://ollama:11434
@@ -38,26 +60,10 @@ def _normalize_language_response(resp: str) -> Optional[str]:
 
     cleaned = resp.strip().lower()
 
-    known_languages = [
-        "english",
-        "german",
-        "french",
-        "spanish",
-        "chinese",
-        "japanese",
-        "korean",
-        "italian",
-        "portuguese",
-        "russian",
-        "arabic",
-        "hindi",
-        "vietnamese",
-        "thai",
-        "turkish",
-        "catalan",
-    ]
+    if cleaned in ("unknown", "undetermined", "unclear"):
+        return None
 
-    for lang in known_languages:
+    for lang in _KNOWN_LANGUAGE_TOKENS:
         if lang in cleaned:
             return lang.title()
 
@@ -72,10 +78,17 @@ def _normalize_translation_response(resp: str) -> Optional[str]:
 
     bad_patterns = [
         "i don't understand",
+        "i do not understand",
+        "i'm sorry",
+        "i am sorry",
         "cannot translate",
         "can't translate",
         "unable to translate",
         "no translation",
+        "not able to translate",
+        "as an ai",
+        "here's the translation",
+        "here is the translation",
         "error",
         "unknown",
         "n/a",
@@ -85,7 +98,10 @@ def _normalize_translation_response(resp: str) -> Optional[str]:
         return None
 
     cleaned = re.sub(
-        r"^\s*(translation|output|answer)\s*:\s*", "", cleaned, flags=re.IGNORECASE
+        r"^\s*(translation|output|answer|result|the\s+english\s+(translation|text))\s*:\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
     )
 
     if not cleaned:
@@ -111,9 +127,12 @@ def translate_content(content: str) -> tuple[bool, str]:
                 {
                     "role": "user",
                     "content": (
-                        "Identify the language of the following text. "
-                        "Reply with only the language name in English and nothing else.\n\n"
-                        f"Text: {post}"
+                        "You classify the language of forum post text.\n"
+                        "Reply with exactly one line and nothing else: one English label from "
+                        f"this list: {_PROMPT_LANGUAGE_ENUM}, or the single word Unknown "
+                        "if the text is blank, gibberish, mixed beyond recognition, or you cannot tell.\n"
+                        "Do not use sentences, punctuation, quotes, explanations, or words like Translation:.\n\n"
+                        f"Text:\n{post}"
                     ),
                 }
             ]
@@ -125,9 +144,11 @@ def translate_content(content: str) -> tuple[bool, str]:
                 {
                     "role": "user",
                     "content": (
-                        "Translate the following text into English. "
-                        "Reply with only the English translation and nothing else.\n\n"
-                        f"Text: {post}"
+                        "Translate the following text into English for a forum.\n"
+                        "Output only the English text: no title, label, markdown fences, apologies, "
+                        "or commentary (nothing like Translation:, I'm sorry, I cannot translate, or As an AI).\n"
+                        "If the text is meaningless or you cannot produce a faithful translation, output only: N/A\n\n"
+                        f"Text:\n{post}"
                     ),
                 }
             ]
